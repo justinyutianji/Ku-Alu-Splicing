@@ -1,0 +1,171 @@
+---
+title: "Gene Ontology Enrichment Map"
+author: "Tianji Yu"
+date: "2025-11-25"
+output: html_document
+---
+
+```{r Figure 4 Enrichment Map-Visualizing GO Analysis Results of Genes containing 967 High-conf CEs}
+library(igraph)
+library(ggraph)
+library(ggrepel)
+library(dplyr)
+
+GO_results <- read.csv(
+  "Data/Gene Enrichment Result.csv",
+  check.names = FALSE
+)
+
+# Step 1: Calculate gene overlap between GO terms (for edges)
+create_similarity_matrix <- function(GO_results) {
+  gene_lists <- strsplit(GO_results$Genes, ",|;")
+  names(gene_lists) <- GO_results$Term
+  
+  n_terms <- nrow(GO_results)
+  similarity_matrix <- matrix(0, n_terms, n_terms)
+  rownames(similarity_matrix) <- colnames(similarity_matrix) <- GO_results$Term
+  
+  # Calculate Jaccard similarity (overlap coefficient)
+  for (i in 1:(n_terms-1)) {
+    for (j in (i+1):n_terms) {
+      genes_i <- gene_lists[[i]]
+      genes_j <- gene_lists[[j]]
+      overlap <- length(intersect(genes_i, genes_j))
+      union_size <- length(union(genes_i, genes_j))
+      similarity_matrix[i,j] <- similarity_matrix[j,i] <- overlap / union_size
+    }
+  }
+  return(similarity_matrix)
+}
+
+# Step 2: Create network
+similarity_matrix <- create_similarity_matrix(GO_results)
+
+# Convert to edge list (only keep edges with similarity > 0.2)
+threshold <- 0.2
+edges <- which(similarity_matrix > threshold & similarity_matrix < 1, arr.ind = TRUE)
+edges <- edges[edges[,1] < edges[,2], ] # Remove duplicates
+
+edge_list <- data.frame(
+  from = rownames(similarity_matrix)[edges[,1]],
+  to = rownames(similarity_matrix)[edges[,2]],
+  weight = similarity_matrix[edges]
+)
+
+# Create the graph from edge list only
+g <- graph_from_data_frame(edge_list, directed = FALSE)
+
+# Add vertex attributes manually from GO_results
+count_lookup <- setNames(GO_results$Count, GO_results$Term)
+fdr_lookup <- setNames(GO_results$FDR, GO_results$Term)
+fold_enrichment_lookup <- setNames(GO_results$`Fold Enrichment`, GO_results$Term)
+
+# Add attributes to vertices
+V(g)$Count <- count_lookup[V(g)$name]
+V(g)$FDR <- fdr_lookup[V(g)$name]
+V(g)$FoldEnrichment <- fold_enrichment_lookup[V(g)$name]
+
+# Plot
+plot <- ggraph(g, layout = "fr") +  
+  geom_edge_link(aes(width = weight), alpha = 0.3, color = "#8AB8D1") +
+  geom_node_point(aes(size = Count, color = FoldEnrichment), alpha = 0.8) +
+  geom_node_text(aes(label = name), size = 6, repel = TRUE, max.overlaps = 20) +
+  scale_size_continuous(range = c(3, 15), name = "Gene Count") +
+  scale_color_gradient(low = "#66C900", high = "#E7C900", name = "Fold Enrichment") +
+  scale_edge_width(range = c(0.2, 2), name = "Gene Overlap") +
+  theme_void() +
+  theme(legend.position = "right")
+
+print(plot)
+
+# Save to PDF
+ggsave(
+  filename = "Plots/Fig4.Go Term.Enrichment Map.pdf",
+  plot = plot,
+  device = "pdf",
+  width = 8,
+  height = 6
+)
+
+```
+
+
+
+```{r Figure 4 Dot Plot-Visualizing GO Analysis Results of Genes containing 967 High-conf CEs}
+library(ggplot2)
+
+GO_results <- read.csv(
+  "Data/Gene Enrichment Result.csv",
+  check.names = FALSE
+)
+
+
+# Reorder terms so smallest FDR comes first (top of y-axis)
+GO_results$Term <- reorder(GO_results$Term, -GO_results$FDR)
+
+plot <- ggplot(GO_results, aes(x=`Fold Enrichment`, y=Term)) +
+  geom_point(aes(color=FDR, size=Count)) +
+  scale_color_gradient(low = "red", high = "blue") +   # default red-blue scale
+  labs(
+    x = 'Fold Enrichment',
+    y = NULL,
+    color = 'FDR',
+    size = 'Count'
+  ) +
+  theme_minimal(base_size = 16, base_family = "Helvetica") +
+  theme(
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white"),
+    axis.title = element_text(face = 'bold'),
+    axis.text  = element_text(face = 'bold'),
+    axis.line  = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+
+
+print(plot)
+
+# Save to PDF
+ggsave(
+  filename = "Plots/Fig4.GO Term.DotPlot1.pdf",
+  plot = plot,
+  device = "pdf",
+  width = 8,
+  height = 6
+)
+
+# Second plot: Size = FDR, Color = Fold Enrichment, X = Count
+plot2 <- ggplot(GO_results, aes(x = Count, y = Term)) +
+  geom_point(aes(color = `Fold Enrichment`, size = FDR)) +
+  scale_color_gradient(low = "blue", high = "red") +  # Higher fold enrichment = red
+  scale_size_continuous(trans = "reverse") +  # Smaller FDR (more significant) = larger points
+  labs(
+    x = 'Count',
+    y = NULL,
+    color = 'Fold Enrichment',
+    size = 'FDR'
+  ) +
+  theme_minimal(base_size = 16, base_family = "Helvetica") +
+  theme(
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white"),
+    axis.title = element_text(face = 'bold'),
+    axis.text  = element_text(face = 'bold'),
+    axis.line  = element_line(color = "black"),
+    axis.ticks = element_line(color = "black")
+  )
+
+print(plot2)
+
+# Save to PDF
+ggsave(
+  filename = "Plots/Fig4.GO Term.DotPlot2.pdf",
+  plot = plot2,
+  device = "pdf",
+  width = 8,
+  height = 6
+)
+```
+
+
+
